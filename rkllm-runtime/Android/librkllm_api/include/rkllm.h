@@ -1,6 +1,6 @@
 #ifndef _RKLLM_H_
 #define _RKLLM_H_
-#include <cstdint>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -220,6 +220,18 @@ typedef struct {
 } RKLLMResultLogits;
 
 /**
+ * @struct RKLLMPerfStat
+ * @brief Structure to hold performance statistics for prefill and generate stages.
+ */
+typedef struct {
+    float prefill_time_ms;      /**< Total time taken for the prefill stage in milliseconds. */
+    int prefill_tokens;         /**< Number of tokens processed during the prefill stage. */
+    float generate_time_ms;     /**< Total time taken for the generate stage in milliseconds. */
+    int generate_tokens;        /**< Number of tokens processed during the generate stage. */
+    float memory_usage_mb;      /**< VmHWM resident memory usage during inference, in megabytes. */
+} RKLLMPerfStat;
+
+/**
  * @struct RKLLMResult
  * @brief Structure to represent the result of LLM inference.
  */
@@ -228,6 +240,7 @@ typedef struct {
     int32_t token_id;                             /**< ID of the generated token. */
     RKLLMResultLastHiddenLayer last_hidden_layer; /**< Hidden states of the last layer (if requested). */
     RKLLMResultLogits logits;                     /**< Model output logits. */
+    RKLLMPerfStat perf;                          /**< Pointer to performance statistics (prefill and generate). */
 } RKLLMResult;
 
 /**
