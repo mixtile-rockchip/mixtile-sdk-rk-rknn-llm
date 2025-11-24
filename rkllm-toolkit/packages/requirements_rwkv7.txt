@@ -25,3 +25,5 @@ optimum==1.23.3
 jsonlines==4.0.0
 timm==1.0.19
 rwkv-fla==0.7.202503140658
+easydict==1.13
+addict==2.4.0

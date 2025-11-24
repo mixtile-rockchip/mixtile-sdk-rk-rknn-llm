@@ -1,4 +1,11 @@
 # CHANGELOG
+## v1.2.3
+
+- Added support for InternVL3.5, DeepSeekOCR, and Qwen3-VL models
+- Added automatic cache reuse for embedding input
+- Added embedding input support for the Gemma3n model
+- Added support for loading chat template from an external file
+
 ## v1.2.2
 
 - Added support for Gemma3n and InternVL3 models

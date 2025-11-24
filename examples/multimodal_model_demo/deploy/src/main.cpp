@@ -111,6 +111,11 @@ int main(int argc, char** argv)
     param.img_end     = "<|vision_end|>";
     param.img_content = "<|image_pad|>";
 
+    //DeepSeekOCR
+    // param.img_start   = "";
+    // param.img_end     = "";
+    // param.img_content = "<｜▁pad▁｜>";
+
     if (argc == 7) {
         std::cerr << "[Warning] Using default img_start/img_end/img_content: "
                 << param.img_start << " , "
@@ -172,12 +177,19 @@ int main(int argc, char** argv)
 
     size_t n_image_tokens = rknn_app_ctx.model_image_token;
     size_t image_embed_len = rknn_app_ctx.model_embed_size;
-    int rkllm_image_embed_len = n_image_tokens * image_embed_len;
+    size_t n_embed_output = rknn_app_ctx.io_num.n_output;
+    int rkllm_image_embed_len = n_image_tokens * image_embed_len * n_embed_output;
     float img_vec[rkllm_image_embed_len];
+    memset(img_vec, 0, rkllm_image_embed_len * sizeof(float));
+    
+    t_start_us = std::chrono::high_resolution_clock::now();
     ret = run_imgenc(&rknn_app_ctx, resized_img.data, img_vec);
     if (ret != 0) {
         printf("run_imgenc fail! ret=%d\n", ret);
     }
+    t_load_end_us = std::chrono::high_resolution_clock::now();
+    load_time = std::chrono::duration_cast<std::chrono::microseconds>(t_load_end_us - t_start_us);
+    printf("%s: ImgEnc Model inference took %8.2f ms\n", __func__, load_time.count() / 1000.0);
     
     RKLLMInput rkllm_input;
     memset(&rkllm_input, 0, sizeof(RKLLMInput));

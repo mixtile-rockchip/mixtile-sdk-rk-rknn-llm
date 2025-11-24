@@ -77,8 +77,13 @@ int init_imgenc(const char* model_path, rknn_app_context_t* app_ctx, const int c
         dump_tensor_attr(&(output_attrs[i]));
     }
     // Set to context
-    app_ctx->model_image_token = output_attrs[0].dims[1];
-    app_ctx->model_embed_size = output_attrs[0].dims[2];
+    for (int i = 0; i < 4; i++) {
+        if (output_attrs[0].dims[i] > 1) {
+            app_ctx->model_image_token = output_attrs[0].dims[i];
+            app_ctx->model_embed_size = output_attrs[0].dims[i + 1];
+            break;
+        }
+    }
     app_ctx->rknn_ctx = ctx;
     app_ctx->io_num = io_num;
     app_ctx->input_attrs = (rknn_tensor_attr*)malloc(io_num.n_input * sizeof(rknn_tensor_attr));
@@ -124,7 +129,7 @@ int run_imgenc(rknn_app_context_t* app_ctx, void* img_data, float* out_result)
 {
     int ret;
     rknn_input inputs[1];
-    rknn_output outputs[1];
+    rknn_output outputs[app_ctx->io_num.n_output];
 
     memset(inputs, 0, sizeof(inputs));
     memset(outputs, 0, sizeof(outputs));
@@ -150,15 +155,25 @@ int run_imgenc(rknn_app_context_t* app_ctx, void* img_data, float* out_result)
     }
 
     // Get Output
-    outputs[0].want_float = 1;
-    ret = rknn_outputs_get(app_ctx->rknn_ctx, 1, outputs, NULL);
+    for (int j = 0; j < app_ctx->io_num.n_output; j++) {
+        outputs[j].want_float = 1;
+    }
+    ret = rknn_outputs_get(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs, NULL);
     if (ret < 0) {
         printf("rknn_outputs_get fail! ret=%d\n", ret);
         goto out;
     }
-
     // Post Process
-    memcpy(out_result, outputs[0].buf, outputs[0].size);
+    if (app_ctx->io_num.n_output == 1) {
+        memcpy(out_result, outputs[0].buf, outputs[0].size);
+    } else {
+        // concat deepstacks and input_embed
+        for (int i = 0; i < app_ctx->model_image_token; i++) {
+            for (int j = 0; j < app_ctx->io_num.n_output; j++) {
+                memcpy(out_result + i * app_ctx->io_num.n_output * app_ctx->model_embed_size + j * app_ctx->model_embed_size, (float*)(outputs[j].buf) + i * app_ctx->model_embed_size, sizeof(float) * app_ctx->model_embed_size);
+            }
+        }
+    }
 
     // Remeber to release rknn output
     rknn_outputs_release(app_ctx->rknn_ctx, 1, outputs);

@@ -6,7 +6,6 @@
 ```
 rkllm-toolkit==1.2.x
 rknn-toolkit2>=2.3.2
-python==3.8
 ```
 
 rknn-toolkit2 installation guide：
@@ -39,7 +38,23 @@ python export/export_vision_qwen2.py --step 0 --path /path/to/Qwen2-VL-model --s
 
 Note: if change the batch, height and width, the cu_seqlens and rotary_pos_emb must be re-generated.
 
-3. If you want to convert models such as Qwen2.5-VL, MiniCPM-V-2_6, SmolVLM, or InternVL3, please use the script export/export_vision.py instead.
+3. If you want to convert models such as Qwen2.5-VL, Qwen3-VL, MiniCPM-V-2_6, SmolVLM, DeepSeekOCR,or InternVL3, please use the script export/export_vision.py instead.
+
+4. When converting the DeepSeekOCR vision model to onnx, you need to set the `antialias` attribute to `False` for all `F.interpolate` calls in the `deepencoder.py` file.
+
+   ```
+   1、pip install onnx==1.18.0
+   2、python export_vision.py --path=/path/to/DeepSeek-OCR --model_name=deepseekocr --height=448 --width=448
+   3、python export_vision_rknn.py --path=./onnx/deepseekocr_vision.onnx --model_name=deepseekocr --height=448 --width=448
+   ```
+
+5. The code for converting Qwen3-VL vision to RKNN is as follows.
+
+   ```
+   1、pip install transformers==4.57.0
+   2、python export_vision.py --path=/path/to/Qwen3-VL --model_name=qwen3-vl --height=448 --width=448
+   3、python export_vision_rknn.py --path=./onnx/qwen3-vl_vision.onnx --model_name=qwen3-vl --height=448 --width=448
+   ```
 
 - ### convert to rknn
 
@@ -63,7 +78,10 @@ python data/make_input_embeds_for_quantize.py --path /path/to/Qwen2-VL-model
 python export/export_rkllm.py --path /path/to/Qwen2-VL-model --target-platform rk3588 --num_npu_core 3 --quantized_dtype w8a8 --device cpu --savepath /path/to/save/qwen2-vl-llm_rk3588.rkllm
 ```
 
+3. When converting DeepSeekOCR, since the model supports only an older version of the transformers library, you need to replace the original file with `modeling_deepseekv2.py` from the `export` directory.
+
 ## 4. C++ Demo
+
 In the `deploy` directory, we provide example code for board-side inference. This code demonstrates the process of "image input to image features," where an input image is processed to output its corresponding image features. These features are then used by the RKLLM model for multimodal content inference.
 
 ### 1. Compile and Build

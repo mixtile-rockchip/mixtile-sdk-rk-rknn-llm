@@ -110,6 +110,32 @@ class qwen2_5_vl_3b_vision(torch.nn.Module):
         
         return self.vpm(flatten_patches, grid_thw)
 
+class qwen3_vl_vision(torch.nn.Module):
+    def __init__(self, vlm, batch_size):
+        super(qwen3_vl_vision, self).__init__()
+        self.merge_size = 2
+        self.temporal_patch_size = 2
+        self.patch_size = 16
+        self.channel = 3
+        self.vpm = vlm.visual
+        self.batch_size = batch_size
+
+    def forward(self, pixel_value, grid_thw):
+        if self.batch_size == 1:
+            patches = pixel_value.repeat(self.temporal_patch_size, 1, 1, 1)
+        elif self.batch_size % self.temporal_patch_size == 1:
+            repeat_image = pixel_value[-1:, ...].repeat(2, 1, 1, 1)
+            patches = torch.cat((pixel_value, repeat_image), dim=0)
+        else:
+            patches = pixel_value
+        grid_t, grid_h, grid_w = grid_thw[0][0], grid_thw[0][1], grid_thw[0][2]
+        patches = patches.reshape(grid_t, self.temporal_patch_size, self.channel, 
+                                  grid_h//self.merge_size, self.merge_size, self.patch_size, grid_w//self.merge_size, self.merge_size, self.patch_size)
+        patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8)
+        flatten_patches = patches.reshape(grid_t * grid_h * grid_w, self.channel * self.temporal_patch_size * self.patch_size * self.patch_size)
+        
+        return self.vpm(flatten_patches, grid_thw)
+
 class smolvlm_vision(torch.nn.Module):
     def __init__(self, vlm):
         super(smolvlm_vision, self).__init__()
@@ -133,6 +159,35 @@ class vila1_5_3b_vision(torch.nn.Module):
         # Get sequence from the vision encoder
         out = self.vlm.encode_images(pixel_values)
         return out
+
+
+class deepseekocr_vision(torch.nn.Module):
+    def __init__(self, model):
+        super(deepseekocr_vision, self).__init__()
+        self.sam_model = model.sam_model
+        self.vision_model = model.vision_model
+        self.view_seperator = model.view_seperator
+        self.image_newline = model.image_newline
+        self.projector = model.projector
+
+    def forward(self, pixel_value):
+        global_features_1 = self.sam_model(pixel_value)
+        global_features_2 = self.vision_model(pixel_value, global_features_1) 
+        global_features = torch.cat((global_features_2[:, 1:], global_features_1.flatten(2).permute(0, 2, 1)), dim=-1) 
+        global_features = self.projector(global_features)
+        print('=====================')
+        print('BASE: ', global_features.shape)
+        print('NO PATCHES')
+        print('=====================')
+        _, hw, n_dim = global_features.shape
+        h = w = int(hw ** 0.5)
+        global_features = global_features.view(h, w, n_dim)
+        global_features = torch.cat(
+            [global_features, self.image_newline[None, None, :].expand(h, 1, n_dim)], dim=1
+        )
+        global_features = global_features.view(-1, n_dim)
+        global_local_features = torch.cat([global_features, self.view_seperator[None, :]], dim=0)
+        return global_local_features
 
 if __name__ == "__main__":
     argparse = argparse.ArgumentParser()
@@ -183,6 +238,25 @@ if __name__ == "__main__":
                     input_names=['pixel', 'grid_thw'],
                     dynamic_axes={'pixel': {2: 'height', 3: 'width'}},
                     opset_version=15)
+    elif model_name == 'qwen3-vl':
+        from transformers import Qwen3VLForConditionalGeneration
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            path,
+            torch_dtype=torch.float32, # 注意此处的数据类型，由于 rknn 目前仅支持 float32 ，因此需要指定；若是在加载权重时限制了数据类型，需要自行修改config.json中的 "use_flash_attn" 参数为 false
+            low_cpu_mem_usage=True, _attn_implementation="eager",
+            trust_remote_code=True).eval().to(device_type)
+        pixel_values = torch.randn(args.batch_size, 3, args.height, args.width, device=model.device, dtype=torch.float32)
+        grid_thw = torch.tensor([[args.batch_size // 2 if args.batch_size% 2 == 0 else args.batch_size // 2 + 1, args.height//16, args.width//16]], dtype=torch.int64)
+        model.eval()
+        model = qwen3_vl_vision(model, args.batch_size)
+        out = model(pixel_values, grid_thw)
+        print("Output shape:", out[0].shape)
+        torch.onnx.export(model, 
+                    (pixel_values, grid_thw), 
+                    savepath,
+                    input_names=['pixel', 'grid_thw'],
+                    dynamic_axes={'pixel': {2: 'height', 3: 'width'}},
+                    opset_version=15)
     elif model_name == 'smolvlm':
         from transformers import SmolVLMForConditionalGeneration
         model = SmolVLMForConditionalGeneration.from_pretrained(
@@ -210,7 +284,18 @@ if __name__ == "__main__":
         pixel_values = torch.randn(args.batch_size, 3, args.height, args.width, device=model.device, dtype=torch.float32)
         model.forward = model.extract_feature
         model = model.to(torch.float32).eval()
-        torch.onnx.export(model, pixel_values, savepath)
+        torch.onnx.export(model, pixel_values, savepath, input_names=['pixel'])
+    elif model_name == 'deepseekocr':
+        model = AutoModel.from_pretrained(
+        path,
+        _attn_implementation='eager',
+        torch_dtype=torch.float32,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True).eval().to(device_type)
+        pixel_values = torch.randn(args.batch_size, 3, args.height, args.width, device=model.device, dtype=torch.float32)
+        model = deepseekocr_vision(model.model)
+        model = model.to(torch.float32).eval()
+        torch.onnx.export(model, pixel_values, savepath, input_names=['pixel'], opset_version=18)
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
         exit(1)

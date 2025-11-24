@@ -92,7 +92,7 @@ class RKLLMTokenInput(ctypes.Structure):
         ("n_tokens", ctypes.c_size_t)
     ]
 
-class RKLLMMultiModelInput(ctypes.Structure):
+class RKLLMMultiModalInput(ctypes.Structure):
     _fields_ = [
         ("prompt", ctypes.c_char_p),
         ("image_embed", ctypes.POINTER(ctypes.c_float)),
@@ -107,7 +107,7 @@ class RKLLMInputUnion(ctypes.Union):
         ("prompt_input", ctypes.c_char_p),
         ("embed_input", RKLLMEmbedInput),
         ("token_input", RKLLMTokenInput),
-        ("multimodal_input", RKLLMMultiModelInput)
+        ("multimodal_input", RKLLMMultiModalInput)
     ]
 
 class RKLLMInput(ctypes.Structure):
